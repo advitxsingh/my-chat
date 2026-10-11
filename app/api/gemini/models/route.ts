@@ -27,12 +27,30 @@ export async function GET() {
     const data = await res.json();
     const rawModels: any[] = data.models || [];
 
-    // Filter to models that support generateContent
-    const validChatModels = rawModels.filter(
-      (m) =>
-        m.supportedGenerationMethods &&
-        m.supportedGenerationMethods.includes("generateContent")
-    );
+    // Filter to generative text/chat models, excluding specialized non-chat endpoints
+    // (TTS audio models, transcription, music/lyria, robotics, computer-use, raw image output)
+    const validChatModels = rawModels.filter((m) => {
+      if (!m.supportedGenerationMethods?.includes("generateContent")) {
+        return false;
+      }
+      const id = (m.name || "").replace(/^models\//, "").toLowerCase();
+      if (
+        id.includes("-tts") ||
+        id.includes("transcribe") ||
+        id.includes("lyria") ||
+        id.includes("robotics") ||
+        id.includes("computer-use") ||
+        id.includes("customtools") ||
+        id.includes("-image") ||
+        id.includes("clip-preview") ||
+        id.includes("banana") ||
+        id.includes("antigravity") ||
+        id.includes("deep-research")
+      ) {
+        return false;
+      }
+      return true;
+    });
 
     // Format and rank models
     const formatted: ModelOption[] = validChatModels.map((m) => {
@@ -45,9 +63,12 @@ export async function GET() {
 
       let badge: string | undefined;
       if (id.includes("3.8-flash")) badge = "Latest";
-      else if (id.includes("3.7")) badge = "Fast";
+      else if (id.includes("3.7")) badge = "Reasoning";
+      else if (id.includes("3.6")) badge = "Fast";
       else if (id.includes("pro")) badge = "Pro";
       else if (id.includes("lite")) badge = "Lite";
+      else if (id.includes("latest")) badge = "Latest";
+      else if (id.includes("flash")) badge = "Fast";
 
       return {
         id,
@@ -61,12 +82,13 @@ export async function GET() {
       };
     });
 
-    // Custom sort: Put curated top models at the front
+    // Custom sort: Put latest flagships first, then others
     const priorityOrder = [
       "gemini-3.8-flash",
       "gemini-3.7-flash",
       "gemini-3.6-flash",
       "gemini-3.5-flash",
+      "gemini-3.5-flash-lite",
       "gemini-3.1-pro-preview",
       "gemini-3.1-flash-lite",
       "gemini-2.5-pro",

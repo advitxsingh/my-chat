@@ -87,17 +87,22 @@ export function ModelSelector({
       </button>
 
       {isOpen && (
-        <div className="absolute left-0 sm:left-auto sm:right-0 mt-2 w-80 sm:w-96 rounded-2xl border border-[#242424] bg-[#0a0a0a] shadow-2xl z-50 overflow-hidden">
-          <div className="p-2.5 border-b border-[#1c1c1c]">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Gemini models..."
-              className="w-full bg-[#121212] border border-[#222222] rounded-xl px-3 py-1.5 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#444444]"
-              autoFocus
-            />
-          </div>
+        <>
+          <div
+            className="fixed inset-0 bg-black/60 z-40 sm:hidden backdrop-blur-xs"
+            onClick={() => setIsOpen(false)}
+          />
+          <div className="fixed inset-x-3 top-14 sm:inset-x-auto sm:absolute sm:left-0 sm:mt-2 w-auto sm:w-96 max-h-[75vh] flex flex-col rounded-2xl border border-[#242424] bg-[#0a0a0a] shadow-2xl z-50 overflow-hidden">
+            <div className="p-2.5 border-b border-[#1c1c1c] flex-shrink-0">
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search Gemini models..."
+                className="w-full bg-[#121212] border border-[#222222] rounded-xl px-3 py-1.5 text-xs text-white placeholder-[#555555] focus:outline-none focus:border-[#444444]"
+                autoFocus
+              />
+            </div>
 
           <div className="max-h-72 overflow-y-auto p-1.5 space-y-1">
             {filteredModels.length === 0 ? (
@@ -146,7 +151,8 @@ export function ModelSelector({
               })
             )}
           </div>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

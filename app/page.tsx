@@ -22,7 +22,9 @@ export default function ChatPage() {
     deleteChat,
     addMessage,
     updateLastAssistantMessage,
+    removeLastMessage,
     isLoaded,
+    isConvexConnected,
   } = useChatStore();
 
   const [input, setInput] = useState("");
@@ -113,6 +115,9 @@ export default function ChatPage() {
     } catch (err: any) {
       if (err.name === "AbortError") {
         console.log("Chat generation stopped by user");
+        if (!fullAssistantResponse) {
+          removeLastMessage(currentChatId);
+        }
       } else {
         console.error("Chat generation error:", err);
         const errMsg = `Error: ${err.message || "Failed to generate response."}`;
@@ -160,6 +165,7 @@ export default function ChatPage() {
         onDeleteChat={deleteChat}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        isConvexConnected={isConvexConnected}
       />
 
       {/* Main Chat Workspace */}

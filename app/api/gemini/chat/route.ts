@@ -68,15 +68,46 @@ export async function POST(req: NextRequest) {
     };
 
     const targetModel = model.replace(/^models\//, "");
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
+    let apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${targetModel}:streamGenerateContent?alt=sse&key=${apiKey}`;
 
-    const upstreamResponse = await fetch(apiUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-    });
+    let upstreamResponse: Response;
+    try {
+      upstreamResponse = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(10000),
+      });
+    } catch (e: any) {
+      if (targetModel !== "gemini-2.5-flash") {
+        console.warn(`Upstream fetch to ${targetModel} failed (${e.message}), falling back to gemini-2.5-flash`);
+        apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+        upstreamResponse = await fetch(apiUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(payload),
+        });
+      } else {
+        throw e;
+      }
+    }
+
+    // If upstream returns 503 (high demand) or 404, fallback to reliable gemini-2.5-flash
+    if ((upstreamResponse.status === 503 || upstreamResponse.status === 404) && targetModel !== "gemini-2.5-flash") {
+      console.warn(`Model ${targetModel} returned ${upstreamResponse.status}, automatically falling back to gemini-2.5-flash`);
+      apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${apiKey}`;
+      upstreamResponse = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    }
 
     if (!upstreamResponse.ok) {
       const errText = await upstreamResponse.text();

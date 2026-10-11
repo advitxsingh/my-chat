@@ -1,7 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Chat, Message, DEFAULT_MODEL } from "./types";
+import { ConvexReactClient } from "convex/react";
+import { api } from "@/convex/_generated/api";
 
 const STORAGE_CHATS_KEY = "mychat_history_chats";
 const STORAGE_MESSAGES_KEY = "mychat_history_messages";
@@ -20,7 +22,9 @@ export interface ChatStore {
   clearAllChats: () => void;
   addMessage: (chatId: string, role: "user" | "assistant" | "system", content: string) => Message;
   updateLastAssistantMessage: (chatId: string, content: string) => void;
+  removeLastMessage: (chatId: string) => void;
   isLoaded: boolean;
+  isConvexConnected: boolean;
 }
 
 export function useChatStore(): ChatStore {
@@ -30,7 +34,21 @@ export function useChatStore(): ChatStore {
   const [selectedModel, setSelectedModel] = useState<string>(DEFAULT_MODEL);
   const [isLoaded, setIsLoaded] = useState<boolean>(false);
 
-  // Load from localStorage on mount
+  // Initialize Convex client if deployment URL is provided
+  const convexClient = useMemo(() => {
+    const url = process.env.NEXT_PUBLIC_CONVEX_URL;
+    if (!url) return null;
+    try {
+      return new ConvexReactClient(url);
+    } catch (e) {
+      console.warn("Could not connect to Convex:", e);
+      return null;
+    }
+  }, []);
+
+  const isConvexConnected = !!convexClient;
+
+  // Load chats on initial mount (from Convex if available, and localStorage as cache/fallback)
   useEffect(() => {
     try {
       const storedChats = localStorage.getItem(STORAGE_CHATS_KEY);
@@ -54,7 +72,29 @@ export function useChatStore(): ChatStore {
     } finally {
       setIsLoaded(true);
     }
-  }, []);
+
+    // If Convex is connected, sync from remote Convex database
+    if (convexClient) {
+      convexClient
+        .query((api as any).chats.list, {})
+        .then((remoteChats: any) => {
+          if (Array.isArray(remoteChats) && remoteChats.length > 0) {
+            const mappedChats: Chat[] = remoteChats.map((rc: any) => ({
+              id: rc._id || rc.id,
+              title: rc.title,
+              model: rc.model,
+              createdAt: rc.createdAt,
+              updatedAt: rc.updatedAt,
+            }));
+            setChats(mappedChats);
+            setActiveChatId((current) => current || mappedChats[0].id);
+          }
+        })
+        .catch((err) => {
+          console.warn("Convex initial sync notice:", err);
+        });
+    }
+  }, [convexClient]);
 
   // Save chats to localStorage
   useEffect(() => {
@@ -62,7 +102,7 @@ export function useChatStore(): ChatStore {
     try {
       localStorage.setItem(STORAGE_CHATS_KEY, JSON.stringify(chats));
     } catch (e) {
-      console.error("Failed to save chats:", e);
+      console.error("Failed to save chats locally:", e);
     }
   }, [chats, isLoaded]);
 
@@ -72,69 +112,127 @@ export function useChatStore(): ChatStore {
     try {
       localStorage.setItem(STORAGE_MESSAGES_KEY, JSON.stringify(messagesMap));
     } catch (e) {
-      console.error("Failed to save messages:", e);
+      console.error("Failed to save messages locally:", e);
     }
   }, [messagesMap, isLoaded]);
 
-  const createNewChat = useCallback((modelOverride?: string): string => {
-    const id = "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
-    const model = modelOverride || selectedModel || DEFAULT_MODEL;
-    const newChat: Chat = {
-      id,
-      title: "New Chat",
-      model,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
+  const createNewChat = useCallback(
+    (modelOverride?: string): string => {
+      const id = "chat_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7);
+      const model = modelOverride || selectedModel || DEFAULT_MODEL;
+      const newChat: Chat = {
+        id,
+        title: "New Chat",
+        model,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
 
-    setChats((prev) => [newChat, ...prev]);
-    setActiveChatId(id);
-    setSelectedModel(model);
-    setMessagesMap((prev) => ({ ...prev, [id]: [] }));
-    return id;
-  }, [selectedModel]);
+      setChats((prev) => [newChat, ...prev]);
+      setActiveChatId(id);
+      setSelectedModel(model);
+      setMessagesMap((prev) => ({ ...prev, [id]: [] }));
 
-  const selectChat = useCallback((id: string) => {
-    setActiveChatId(id);
-    setChats((prev) => {
-      const chat = prev.find((c) => c.id === id);
-      if (chat && chat.model) {
-        setSelectedModel(chat.model);
+      // Sync to Convex backend if connected
+      if (convexClient) {
+        convexClient
+          .mutation((api as any).chats.create, {
+            title: newChat.title,
+            model: newChat.model,
+          })
+          .catch((e) => console.warn("Convex createChat sync notice:", e));
       }
-      return prev;
-    });
-  }, []);
 
-  const renameChat = useCallback((id: string, newTitle: string) => {
-    if (!newTitle.trim()) return;
-    setChats((prev) =>
-      prev.map((c) =>
-        c.id === id
-          ? { ...c, title: newTitle.trim(), updatedAt: Date.now() }
-          : c
-      )
-    );
-  }, []);
+      return id;
+    },
+    [selectedModel, convexClient]
+  );
 
-  const deleteChat = useCallback((id: string) => {
-    setChats((prev) => {
-      const filtered = prev.filter((c) => c.id !== id);
-      if (activeChatId === id) {
-        const nextActive = filtered.length > 0 ? filtered[0].id : null;
-        setActiveChatId(nextActive);
-        if (filtered.length > 0) {
-          setSelectedModel(filtered[0].model || DEFAULT_MODEL);
+  const selectChat = useCallback(
+    (id: string) => {
+      setActiveChatId(id);
+      setChats((prev) => {
+        const chat = prev.find((c) => c.id === id);
+        if (chat && chat.model) {
+          setSelectedModel(chat.model);
         }
-      }
-      return filtered;
-    });
+        return prev;
+      });
 
-    setMessagesMap((prev) => {
-      const copy = { ...prev };
-      delete copy[id];
-      return copy;
-    });
-  }, [activeChatId]);
+      // If Convex is connected and messages aren't loaded yet, fetch from Convex
+      if (convexClient && (!messagesMap[id] || messagesMap[id].length === 0)) {
+        convexClient
+          .query((api as any).messages.list, { chatId: id })
+          .then((remoteMsgs: any) => {
+            if (Array.isArray(remoteMsgs) && remoteMsgs.length > 0) {
+              const mapped: Message[] = remoteMsgs.map((m: any) => ({
+                id: m._id || m.id,
+                chatId: m.chatId,
+                role: m.role,
+                content: m.content,
+                createdAt: m.createdAt,
+              }));
+              setMessagesMap((prev) => ({ ...prev, [id]: mapped }));
+            }
+          })
+          .catch(() => {});
+      }
+    },
+    [convexClient, messagesMap]
+  );
+
+  const renameChat = useCallback(
+    (id: string, newTitle: string) => {
+      if (!newTitle.trim()) return;
+      const trimmed = newTitle.trim();
+      setChats((prev) =>
+        prev.map((c) =>
+          c.id === id ? { ...c, title: trimmed, updatedAt: Date.now() } : c
+        )
+      );
+
+      // Sync to Convex backend if connected
+      if (convexClient) {
+        convexClient
+          .mutation((api as any).chats.updateTitle, {
+            id: id as any,
+            title: trimmed,
+          })
+          .catch(() => {});
+      }
+    },
+    [convexClient]
+  );
+
+  const deleteChat = useCallback(
+    (id: string) => {
+      setChats((prev) => {
+        const filtered = prev.filter((c) => c.id !== id);
+        if (activeChatId === id) {
+          const nextActive = filtered.length > 0 ? filtered[0].id : null;
+          setActiveChatId(nextActive);
+          if (filtered.length > 0) {
+            setSelectedModel(filtered[0].model || DEFAULT_MODEL);
+          }
+        }
+        return filtered;
+      });
+
+      setMessagesMap((prev) => {
+        const copy = { ...prev };
+        delete copy[id];
+        return copy;
+      });
+
+      // Sync to Convex backend if connected
+      if (convexClient) {
+        convexClient
+          .mutation((api as any).chats.deleteChat, { id: id as any })
+          .catch(() => {});
+      }
+    },
+    [activeChatId, convexClient]
+  );
 
   const clearAllChats = useCallback(() => {
     setChats([]);
@@ -184,30 +282,55 @@ export function useChatStore(): ChatStore {
         })
       );
 
+      // Sync to Convex backend if connected and content is not empty
+      if (convexClient && content.trim()) {
+        convexClient
+          .mutation((api as any).messages.send, {
+            chatId,
+            role,
+            content,
+          })
+          .catch(() => {});
+      }
+
       return message;
+    },
+    [convexClient]
+  );
+
+  const updateLastAssistantMessage = useCallback(
+    (chatId: string, content: string) => {
+      setMessagesMap((prev) => {
+        const currentList = prev[chatId] || [];
+        if (currentList.length === 0) return prev;
+
+        const lastIdx = currentList.length - 1;
+        const lastMsg = currentList[lastIdx];
+
+        if (lastMsg.role !== "assistant") return prev;
+
+        const updated = [...currentList];
+        updated[lastIdx] = {
+          ...lastMsg,
+          content,
+        };
+
+        return {
+          ...prev,
+          [chatId]: updated,
+        };
+      });
     },
     []
   );
 
-  const updateLastAssistantMessage = useCallback((chatId: string, content: string) => {
+  const removeLastMessage = useCallback((chatId: string) => {
     setMessagesMap((prev) => {
       const currentList = prev[chatId] || [];
       if (currentList.length === 0) return prev;
-
-      const lastIdx = currentList.length - 1;
-      const lastMsg = currentList[lastIdx];
-
-      if (lastMsg.role !== "assistant") return prev;
-
-      const updated = [...currentList];
-      updated[lastIdx] = {
-        ...lastMsg,
-        content,
-      };
-
       return {
         ...prev,
-        [chatId]: updated,
+        [chatId]: currentList.slice(0, -1),
       };
     });
   }, []);
@@ -236,6 +359,8 @@ export function useChatStore(): ChatStore {
     clearAllChats,
     addMessage,
     updateLastAssistantMessage,
+    removeLastMessage,
     isLoaded,
+    isConvexConnected,
   };
 }

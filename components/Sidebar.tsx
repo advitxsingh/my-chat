@@ -22,6 +22,7 @@ interface SidebarProps {
   onDeleteChat: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
+  isConvexConnected?: boolean;
 }
 
 export function Sidebar({
@@ -33,6 +34,7 @@ export function Sidebar({
   onDeleteChat,
   isOpen,
   onClose,
+  isConvexConnected,
 }: SidebarProps) {
   const [search, setSearch] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -249,7 +251,7 @@ export function Sidebar({
         <div className="p-3 border-t border-[#161616] flex items-center justify-between text-[11px] text-[#555555]">
           <span className="font-mono">AMOLED Black</span>
           <span className="text-[10px] bg-[#121212] px-2 py-0.5 rounded border border-[#222222]">
-            Convex Ready
+            {isConvexConnected ? "Convex Active" : "Convex Ready"}
           </span>
         </div>
       </aside>

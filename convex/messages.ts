@@ -39,6 +39,26 @@ export const send = mutation({
   },
 });
 
+export const updateLastMessage = mutation({
+  args: {
+    chatId: v.string(),
+    content: v.string(),
+  },
+  handler: async (ctx: any, args: any) => {
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_chatId", (q: any) => q.eq("chatId", args.chatId))
+      .order("desc")
+      .first();
+
+    if (messages && messages.role === "assistant") {
+      await ctx.db.patch(messages._id, {
+        content: args.content,
+      });
+    }
+  },
+});
+
 export const clear = mutation({
   args: { chatId: v.string() },
   handler: async (ctx: any, args: any) => {

@@ -1,22 +1,15 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkMath from "remark-math";
 import remarkGfm from "remark-gfm";
 import rehypeKatex from "rehype-katex";
+import "katex/dist/contrib/mhchem.js";
 import { Message } from "@/lib/types";
 import { CodeBlock } from "./CodeBlock";
 import { Copy, Check } from "lucide-react";
-
-// Ensure KaTeX mhchem extension is loaded for chemistry notation
-if (typeof window !== "undefined") {
-  try {
-    require("katex/dist/contrib/mhchem.js");
-  } catch (e) {
-    // Graceful fallback
-  }
-}
+import { preprocessMarkdownMath } from "@/lib/markdown";
 
 interface MessageItemProps {
   message: Message;
@@ -36,6 +29,12 @@ export function MessageItem({ message, isStreaming }: MessageItemProps) {
       console.error("Failed to copy message:", e);
     }
   };
+
+  // Preprocess LaTeX math, chemistry, and equation blocks outside code
+  const processedContent = useMemo(() => {
+    if (isUser) return message.content;
+    return preprocessMarkdownMath(message.content);
+  }, [message.content, isUser]);
 
   if (isUser) {
     return (
@@ -74,7 +73,7 @@ export function MessageItem({ message, isStreaming }: MessageItemProps) {
       <div className="markdown-content text-[15px] leading-relaxed break-words overflow-hidden">
         <ReactMarkdown
           remarkPlugins={[remarkMath, remarkGfm]}
-          rehypePlugins={[rehypeKatex]}
+          rehypePlugins={[[rehypeKatex, { throwOnError: false }]]}
           components={{
             code({ node, inline, className, children, ...props }: any) {
               const match = /language-(\w+)/.exec(className || "");
@@ -113,7 +112,7 @@ export function MessageItem({ message, isStreaming }: MessageItemProps) {
             },
           }}
         >
-          {message.content}
+          {processedContent}
         </ReactMarkdown>
 
         {isStreaming && (

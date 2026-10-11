@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Check, Copy } from "lucide-react";
+import hljs from "highlight.js";
 
 interface CodeBlockProps {
   language?: string;
@@ -21,13 +22,32 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
     }
   };
 
+  const highlightedCode = useMemo(() => {
+    if (!value) return "";
+    const cleanLang = (language || "").toLowerCase().trim();
+    if (cleanLang && hljs.getLanguage(cleanLang)) {
+      try {
+        return hljs.highlight(value, { language: cleanLang, ignoreIllegals: true }).value;
+      } catch (e) {
+        // Fallback below
+      }
+    }
+    try {
+      return hljs.highlightAuto(value).value;
+    } catch (e) {
+      return "";
+    }
+  }, [language, value]);
+
   return (
-    <div className="relative my-4 rounded-lg border border-[#222222] bg-[#070707] overflow-hidden text-sm">
-      <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#0e0e0e] border-b border-[#1c1c1c] text-xs text-[#888888] font-mono">
-        <span className="uppercase tracking-wider">{language || "code"}</span>
+    <div className="relative my-4 rounded-xl border border-[#222222] bg-[#050505] overflow-hidden text-sm shadow-md">
+      <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#0d0d0d] border-b border-[#1a1a1a] text-xs text-[#888888] font-mono">
+        <span className="uppercase tracking-wider font-semibold text-[11px] text-[#aaaaaa]">
+          {language || "code"}
+        </span>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1.5 hover:text-white transition-colors py-0.5 px-1.5 rounded hover:bg-[#1a1a1a]"
+          className="flex items-center gap-1.5 hover:text-white transition-colors py-1 px-2 rounded-lg hover:bg-[#1a1a1a]"
           title="Copy code"
         >
           {copied ? (
@@ -45,7 +65,14 @@ export function CodeBlock({ language, value }: CodeBlockProps) {
       </div>
       <div className="p-4 overflow-x-auto">
         <pre className="font-mono text-[13px] leading-relaxed text-[#e5e5e5] m-0">
-          <code>{value}</code>
+          {highlightedCode ? (
+            <code
+              className="hljs"
+              dangerouslySetInnerHTML={{ __html: highlightedCode }}
+            />
+          ) : (
+            <code>{value}</code>
+          )}
         </pre>
       </div>
     </div>
